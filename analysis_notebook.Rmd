@@ -1,0 +1,308 @@
+---
+title: "Analysis Notebook"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+```{r set knitr options, echo = FALSE}
+# set some knitr options
+knitr::opts_chunk$set(echo = FALSE
+                      , message = FALSE
+                      , warning = FALSE)
+```
+
+```{r}
+library(lme4)
+library(effectsize)
+library(lmerTest)
+library(ggplot2)
+library(svglite)
+library(ggpubr)
+library(car)
+library(dplyr)
+library(lmtest)
+library(ordinal)
+library(DAAG)
+library(robustlmm)
+library(moments)
+library(gghalves)
+library(apaTables)
+library(MuMIn)
+library(insight)
+```
+
+## Loading Data
+```{r}
+data <- read.csv("D:\\ICB_exp1\\data_wayfinding.csv")
+
+data$trialType.f <- factor(data$trialType)
+data$subject.f <- factor(data$subject)
+data$trialID.f <- factor(data$trialID)
+data$stress_level.s <- as.numeric(scale(data$stress_level))
+data$success.f <- factor(data$success)
+data$Efficiency.s <- as.numeric(scale(data$Efficiency))
+data$speed.s <- as.numeric(scale(data$speed))
+data$trial_type.int <- dplyr::recode(data$trialType.f, A=1, B=2, C=3)
+data$trial_type.p <- dplyr::recode(data$trialType.f, A='control', B='time pressure non-blocked', C='time pressure blocked')
+
+data_subj_success <- data[data$success==1, ] %>%
+  group_by(subject.f) %>%
+  summarise(Efficiency = mean(Efficiency))
+```
+
+```{r}
+data_si <- read.csv("D:\\ICB_exp1\\SI_trial.csv")
+data_si$trialType.f <- factor(data_si$trial_type)
+data_si$subject.f <- factor(data_si$subject)
+data_si$shortcut.f <- factor(data_si$shortcut)
+
+data_with_si <- merge(data[data$success==1, ], data_si, by=c("subject.f","trialID"))
+
+data_shortcut_subj <- data_with_si %>% 
+  group_by(subject.f) %>% 
+  summarise(shortcut = mean(shortcut))
+```
+
+```{r}
+data_other <- read.csv("D:\\ICB_exp1\\data_questionnaire.csv")
+data_other$subject.f <- factor(data_other$ID)
+
+data_per_subj <- data %>% group_by(subject.f) %>% 
+  summarise(stress_level = mean(stress_level),
+            speed = mean(speed),
+            success = mean(success))
+data_per_subj <- merge(data_per_subj, data_subj_success, by=c("subject.f"))
+data_per_subj <- merge(data_per_subj, data_shortcut_subj, by=c("subject.f"))
+
+data_merge_per_subj <- merge(data_per_subj, data_other, by=c("subject.f"))
+```
+
+```{r}
+cbPalette <- c("red", "darkgreen", "darkblue")
+data_b <- within(data, trialType.f <- relevel(trialType.f, ref = "B"))
+data_subj <- data %>%
+  group_by(subject.f, trialType.f, trial_type.p) %>%
+  summarise(stress_level = mean(stress_level),
+            speed = mean(speed),
+            success = mean(success))
+```
+
+## Stress Rating
+```{r}
+model <- lmer(stress_level.s ~ trialType.f + trialNumber + (1 | subject.f), data = data)
+summary(model, ddf = "Satterthwaite")
+```
+
+```{r}
+r.squaredGLMM(model)
+```
+
+```{r}
+model <- lmer(stress_level.s ~ trialType.f + trialNumber + (1 | subject.f), data = data_b)
+summary(model, ddf = "Satterthwaite")
+```
+
+```{r}
+stress <- ggplot(data = data_subj, aes(x=trial_type.p, y=stress_level, shape=trial_type.p)) + geom_half_boxplot(errorbar.draw = TRUE, outlier.color = NA, data=data_subj, aes(x=trial_type.p, y=stress_level, color=trial_type.p)) + geom_half_violin(side = "r", data=data_subj, aes(x=trial_type.p, y=stress_level, color=trial_type.p)) + geom_half_point(side = "l", alpha = .5, data=data_subj, aes(x=trial_type.p, y=stress_level, color=trial_type.p)) + geom_signif(comparisons = list(c("control","time pressure non-blocked"),c("control","time pressure blocked"),c("time pressure non-blocked","time pressure blocked")), annotations = c("***","***","***"), y_position = c(7.6,7,7.6)) + theme_classic() + theme(legend.position="none", axis.text.x = element_text(size = 11, hjust = 0.5)) + scale_y_continuous(name ="Self-reported Stress Level", breaks=seq(0,7,1)) + scale_x_discrete(name="Trial Type") + scale_color_manual(values=cbPalette)
+stress
+```
+## Excess Distance
+```{r}
+model <- lmer(Efficiency.s ~ trialType.f + trialNumber + (1 | subject.f), data = data[data$success==1,])
+```
+
+```{r}
+model <- rlmer(Efficiency.s ~ trialType.f + trialNumber + (1 | subject.f), data = data[data$success == 1,])
+summary(model)
+```
+
+```{r}
+# https://stackoverflow.com/questions/58382577/how-to-obtain-r2-for-robust-mixed-effect-model-rlmer-command-robustlmm
+var.fix <- get_variance_fixed(model)
+var.ran <- get_variance_random(model)
+var.res <- get_variance_residual(model)
+R2m = var.fix/(var.fix+var.ran+var.res)
+R2c = (var.fix+var.ran)/(var.fix+var.ran+var.res)
+print(R2m)
+print(R2c)
+```
+
+```{r}
+model <- rlmer(Efficiency.s ~ trialType.f + trialNumber + (1 | subject.f), data = data_b[data_b$success == 1,])
+summary(model)
+```
+
+```{r}
+model <- lmer(Efficiency.s ~ trialType.f + trialNumber + (1 | subject.f), data = data[data$success == 1,])
+
+robust_model <- rlmer(Efficiency.s ~ trialType.f + trialNumber + (1 | subject.f), data = data[data$success == 1,])
+
+# get coefficients from non-robust model to extract Satterthwaite approximated DFs
+coefs <- data.frame(coef(summary(model)))
+
+# get coefficients from robust model to extract t-values
+coefs.robust <- coef(summary(robust_model))
+
+# calculate p-values based on robust t-values and non-robust approx. DFs
+p.values <- 2*pt(abs(coefs.robust[,3]), coefs$df, lower=FALSE)
+p.values < 0.05
+p.values < 0.01
+p.values < 0.001
+p.values
+```
+
+```{r}
+model <- lmer(Efficiency.s ~ trialType.f + trialNumber + (1 | subject.f), data = data_b[data_b$success == 1,])
+
+robust_model <- rlmer(Efficiency.s ~ trialType.f + trialNumber + (1 | subject.f), data = data_b[data_b$success == 1,])
+
+# get coefficients from non-robust model to extract Satterthwaite approximated DFs
+coefs <- data.frame(coef(summary(model)))
+
+# get coefficients from robust model to extract t-values
+coefs.robust <- coef(summary(robust_model))
+
+# calculate p-values based on robust t-values and non-robust approx. DFs
+p.values <- 2*pt(abs(coefs.robust[,3]), coefs$df, lower=FALSE)
+p.values < 0.05
+p.values < 0.01
+p.values < 0.001
+p.values
+```
+```{r}
+data_subj_trial_success <- data[data$success==1,] %>%
+  group_by(subject.f, trialType.f, trial_type.p) %>%
+  summarise(Efficiency = mean(Efficiency))
+
+eff <- ggplot(data = data_subj_trial_success, aes(x=trial_type.p, y=Efficiency, shape=trial_type.p)) + geom_half_boxplot(errorbar.draw = TRUE, outlier.color = NA, data=data_subj_trial_success, aes(x=trial_type.p, y=Efficiency, color=trial_type.p)) + geom_half_violin(side = "r", data=data_subj_trial_success, aes(x=trial_type.p, y=Efficiency, color=trial_type.p)) + geom_half_point(side = "l", alpha = .5, data=data_subj_trial_success, aes(x=trial_type.p, y=Efficiency, color=trial_type.p)) + geom_signif(comparisons = list(c("control","time pressure non-blocked"),c("control","time pressure blocked"),c("time pressure non-blocked","time pressure blocked")), annotations = c("***","*","***"), y_position = c(1.6,1.4,1.6)) + theme_classic() + theme(legend.position="none", axis.text.x = element_text(size = 11, hjust = 0.5)) + scale_y_continuous(name ="Excess Distance") + scale_x_discrete(name="Trial Type") + scale_color_manual(values=cbPalette)
+eff
+```
+## Trial Completion Rate
+```{r}
+model <- glmer(success.f ~ trialType.f + trialNumber +timeInTrial+ (1 | subject.f) , data = data, family = binomial(link = "logit"))
+summary(model)
+```
+
+```{r}
+r.squaredGLMM(model)
+```
+
+```{r}
+model <- glmer(success.f ~ trialType.f + trialNumber  + (1 | subject.f) , data = data_b, family = binomial(link = "logit"))
+summary(model)
+```
+
+```{r}
+success <- ggplot(data = data_subj, aes(x=trial_type.p, y=success, shape=trial_type.p)) + geom_half_boxplot(errorbar.draw = TRUE, outlier.color = NA, data=data_subj, aes(x=trial_type.p, y=success, color=trial_type.p)) + geom_half_violin(side = "r", data=data_subj, aes(x=trial_type.p, y=success, color=trial_type.p)) + geom_half_point(side = "l", alpha = .5, data=data_subj, aes(x=trial_type.p, y=success, color=trial_type.p)) + geom_signif(comparisons = list(c("control","time pressure non-blocked"),c("control","time pressure blocked"),c("time pressure non-blocked","time pressure blocked")), annotations = c("**","***","**"), y_position = c(1.2,1.1,1.2)) + theme_classic() + theme(legend.position="none", axis.text.x = element_text(size = 11, hjust = 0.5)) + scale_y_continuous(name ="Trial Completion Rate", breaks=seq(0,1,0.5)) + scale_x_discrete(name="Trial Type") + scale_color_manual(values=cbPalette)
+success
+```
+## Shortcut Rate
+```{r}
+data_shortcut_trialtype <- data_with_si %>%
+  group_by(subject.f, trial_type.p, trialType) %>%
+  summarise(shortcut=mean(shortcut),
+            Efficiency=mean(Efficiency))
+
+model <- glmer(shortcut.f ~ trialType.f.x + trialNumber + (1 | subject.f) , data = data_with_si, family = binomial(link = "logit"))
+summary(model)
+```
+
+```{r}
+r.squaredGLMM(model)
+```
+
+```{r}
+shortcut <- ggplot(data = data_shortcut_trialtype, aes(x=trial_type.p, y=shortcut, shape=trial_type.p)) + geom_half_boxplot(errorbar.draw = TRUE, outlier.color = NA, data=data_shortcut_trialtype, aes(x=trial_type.p, y=shortcut, color=trial_type.p)) + geom_half_violin(side = "r", data=data_shortcut_trialtype, aes(x=trial_type.p, y=shortcut, color=trial_type.p)) + geom_half_point(side = "l", alpha = .5, data=data_shortcut_trialtype, aes(x=trial_type.p, y=shortcut, color=trial_type.p)) + geom_signif(comparisons = list(c("control","time pressure non-blocked")), annotations = c("*"), y_position = c(1.1)) + theme_classic() + theme(legend.position="none", axis.text.x = element_text(size = 11, hjust = 0.5)) + scale_y_continuous(name ="Shortcut Rate", breaks=seq(0,1,0.5)) + scale_x_discrete(name="Trial Type") + scale_color_manual(values=cbPalette)
+shortcut
+```
+
+```{r, fig.width = 12.5, fig.height = 8}
+multi <- ggarrange(stress, success, eff, shortcut,
+           ncol = 2, nrow = 2, labels = "AUTO")
+multi
+```
+## Pointing Error vs Wayfinding performance
+```{r}
+data2 <- data_other %>%
+  dplyr::mutate(category = 
+    dplyr::case_when(
+      PointingError >= median(PointingError) ~ "High",
+      PointingError < median(PointingError) ~ "Low"
+    )
+  )
+```
+
+```{r}
+data_high_low <- merge(data_shortcut_trialtype, data2, by=c("subject.f"))
+```
+
+```{r}
+data_high_low$category <- factor(data_high_low$category, levels=c("Low", "High"))
+s <- ggplot(data = data_high_low, aes(x=category, y=shortcut)) + geom_signif(annotation=c("***", "NS"), y_position = c(1.1, 1.1), xmin=c(0.8,1.8), xmax=c(1.2,2.2)) + geom_half_boxplot(errorbar.draw = TRUE, outlier.color = NA, data=data_high_low, aes(x=category, y=shortcut, color=trial_type.p)) + geom_half_violin(side = "r", data=data_high_low, aes(x=category, y=shortcut, color=trial_type.p)) + geom_half_point(side='l', alpha = .5, data=data_high_low, aes(x=category, y=shortcut, color=trial_type.p)) + theme_classic2() + scale_y_continuous(name ="Shortcut Rate") + scale_x_discrete(name="Pointing Error") + scale_color_manual(values=cbPalette) + labs(color = "Trial Type")
+s
+```
+
+```{r}
+res <- t.test(data_high_low$shortcut[data_high_low$category=="Low" & data_high_low$trialType=="A"], data_high_low$shortcut[data_high_low$category=="Low" & data_high_low$trialType=="B"], paired=TRUE)
+cohens_d(res)
+res
+```
+
+```{r}
+res <- t.test(data_high_low$shortcut[data_high_low$category=="High" & data_high_low$trialType=="A"], data_high_low$shortcut[data_high_low$category=="High" & data_high_low$trialType=="B"], paired=TRUE)
+cohens_d(res)
+res
+```
+
+```{r}
+# data_high_low$category <- factor(data_high_low$category, levels=c("Low", "High"))
+ed <- ggplot(data = data_high_low, aes(x=category, y=Efficiency.x)) + geom_signif(annotation=c("*", "NS"), y_position = c(1.35, 1.35), xmin=c(0.8,1.8), xmax=c(1.2,2.2)) + geom_half_boxplot(errorbar.draw = TRUE, outlier.color = NA, data=data_high_low, aes(x=category, y=Efficiency.x, color=trial_type.p)) + geom_half_violin(side = "r", data=data_high_low, aes(x=category, y=Efficiency.x, color=trial_type.p)) + geom_half_point(side='l', alpha = .5, data=data_high_low, aes(x=category, y=Efficiency.x, color=trial_type.p)) + theme_classic2() + scale_y_continuous(name ="Excess Distance") + scale_x_discrete(name="Pointing Error") + scale_color_manual(values=cbPalette) + labs(color = "Trial Type")
+ed
+```
+
+```{r}
+res <- t.test(data_high_low$Efficiency.x[data_high_low$category=="Low" & data_high_low$trialType=="A"], data_high_low$Efficiency.x[data_high_low$category=="Low" & data_high_low$trialType=="B"], paired = TRUE)
+cohens_d(res)
+res
+```
+
+```{r}
+res <- t.test(data_high_low$Efficiency.x[data_high_low$category=="High" & data_high_low$trialType=="A"], data_high_low$Efficiency.x[data_high_low$category=="High" & data_high_low$trialType=="B"], paired=TRUE)
+cohens_d(res)
+res
+```
+## Individual Differences
+```{r}
+data_cor <- data_merge_per_subj[c("success", "Efficiency.x", "shortcut", "stress_level.x", "PointingError", "SpatialAnxiety", "SBSOD")]
+data_cor <- data_cor %>% rename("StressLevel" = "stress_level.x",
+                          "TrialCompletion Rate" = "success",
+                          "ExcessDistance" = "Efficiency.x",
+                          "ShortcutRate" = "shortcut",
+                          "PointingError" = "PointingError",
+                          "SpatialAnxiety" = "SpatialAnxiety",
+                          "SBSOD" = "SBSOD")
+#apa.cor.table(data_cor, filename = "correlation.doc")
+apa.cor.table(data_cor, filename="new_corr.doc")
+```
+```{r}
+fit <- lm(ShortcutRate ~ PointingError + SBSOD, data = data_cor)
+summary(fit)
+```
+```{r}
+fit <- lm(ExcessDistance ~ PointingError + SBSOD, data = data_cor)
+summary(fit)
+```
+
+```{r}
+data_merge_per_subj$diffSI <- data_shortcut_trialtype[data_shortcut_trialtype$trialType=="A",]$shortcut - data_shortcut_trialtype[data_shortcut_trialtype$trialType=="B",]$shortcut
+
+data_merge_per_subj$diffED <- data_shortcut_trialtype[data_shortcut_trialtype$trialType=="A",]$Efficiency - data_shortcut_trialtype[data_shortcut_trialtype$trialType=="B",]$Efficiency
+
+data_diff <- data_merge_per_subj[c("diffSI", "diffED", "PointingError", "SpatialAnxiety")]
+apa.cor.table(data_diff)
+```
+
+```{r}
+cor.test(data_diff$diffSI,data_diff$PointingError)
+cor.test(data_diff$diffED,data_diff$PointingError)
+```
