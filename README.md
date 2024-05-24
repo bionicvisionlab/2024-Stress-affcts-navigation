@@ -5,6 +5,8 @@
 Please cite as
 > Varshney, A., Munns, M.E., Kasowski, J. et al. Stress affects navigation strategies in immersive virtual reality. Sci Rep 14, 5949 (2024). https://doi.org/10.1038/s41598-024-56048-8
 
+This repo contains Data and R code necessary to reproduce the results and figures in our paper.
+
 Abstract: There are known individual differences in both the ability to learn the layout of novel environments
 and the flexibility of strategies for navigating known environments. However, it is unclear how
 navigational abilities are impacted by high-stress scenarios. Here we used immersive virtual
