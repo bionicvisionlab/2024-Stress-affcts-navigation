@@ -1,4 +1,4 @@
-[![license](https://img.shields.io/badge/License-BSD%202--Clause-blue.svg)]()
+[![license](https://img.shields.io/badge/License-BSD%202--Clause-blue.svg)](https://github.com/bionicvisionlab/2024-Stress-affects-navigation/blob/master/LICENSE)
 [![DOI](https://img.shields.io/badge/DOI-10.1101%2F2023.05.30.542912-orange)](https://doi.org/10.1038/s41598-024-56048-8)
 
 # Stress affects navigation strategies in immersive virtual reality
