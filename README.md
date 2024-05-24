@@ -21,3 +21,7 @@ non-stressed control trials). On unblocked stress trials, participants were less
 and consequently navigated less efficiently compared to control trials. Participants with more trait
 spatial anxiety reported more stress and navigated less efficiently. Overall, our results suggest that
 navigational abilities change considerably under high-stress conditions.
+
+
+https://github.com/bionicvisionlab/2024-Stress-affects-navigation/assets/77898028/4b031053-3054-40b5-af0e-4c8b9d76964c
+
